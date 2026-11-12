@@ -1,51 +1,21 @@
-# ai-engineering-bootcamp-prerequisites
+# AI Engineering Bootcamp Prerequisites
 
-Welcome to the prerequisites repository for the [End-to-End AI Engineering Bootcamp](https://maven.com/swirl-ai/end-to-end-ai-engineering)! This repository is dedicated to setting up your development environment and scafoling a simple project with a StreamLit UI frontend service decoupled from FastAPI server.
+This repository contains a Next.js client and a FastAPI backend for the [End-to-End AI Engineering Bootcamp](https://maven.com/swirl-ai/end-to-end-ai-engineering).
 
-We strongly recomend you coding along the videos available in our YouTube channel rather than just cloning the repository and running the code.
+## Run locally with Docker
 
----
-
-[Video 1](https://youtu.be/3WsEgLtwsGs): Setting up your development environment
-
-[Video 2](https://youtu.be/cGOGA7GFecI): Build and containerise your first chatbot
-
-[Video 3](https://youtu.be/bZHaCAFAUCs): Moving the agent behind a FastAPI server
-
-[Video 4](https://youtu.be/IcbzksbMhuM): Containerising Backend and Frontend
-
----
-
-
-If you do need to run the code, this is how:
-
-- Clone the repository.
-- Run:
+Create the environment file:
 ```bash
 cp env.example .env
 ```
 
-Edit `.env` and add your API keys:
-
-```
-OPENAI_API_KEY=your_google_api_key
-GOOGLE_API_KEY=your_google_api_key
-GROQ_API_KEY=your_groq_api_key
-```
-Keep the remaining configuration as per ```.env.example```.
-
-
-#### To run the project, execute:
+Add any required API keys to `.env`, then start the services:
 
 ```bash
-make run-docker-compose
+make run
 ```
 
-Streamlit application: http://localhost:8501
-
-FastAPI documentation: http://localhost:8000/docs
-
-
+The client is available at http://localhost:3000 and the API documentation at http://localhost:8000/docs. Stop the services with `make stop`.
 
 ## Contact
 

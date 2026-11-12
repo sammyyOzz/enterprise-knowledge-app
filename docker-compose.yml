@@ -1,15 +1,11 @@
 services:
-  streamlit-app:
+  client:
     build:
-      context: .
-      dockerfile: apps/chatbot_ui/Dockerfile
+      context: ./apps/client
+      dockerfile: Dockerfile
     ports:
-      - 8501:8501
-    env_file:
-      - .env
+      - 3000:3000
     restart: unless-stopped
-    volumes:
-      - ./apps/chatbot_ui/src:/app/apps/chatbot_ui/src
 
   api:
     build:
