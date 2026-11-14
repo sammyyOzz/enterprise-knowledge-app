@@ -26,6 +26,11 @@ class Config(BaseSettings):
     S3_SECRET_KEY: str
     S3_BUCKET: str
 
+    # ================================
+    # EMBEDDINGS
+    # ================================
+    EMBEDDING_DIM: int = 1536
+
     model_config = SettingsConfigDict(env_file=".env")
 
 config = Config()
