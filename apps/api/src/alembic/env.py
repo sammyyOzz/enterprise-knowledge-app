@@ -7,7 +7,7 @@ from api.core.database import Base # importing this registers every model on Bas
 from api.models.chunk import Chunk
 from api.models.document import Document
 from api.models.document_version import DocumentVersion
-from api.models.injestion_job import IngestionJob
+from api.models.ingestion_job import IngestionJob
 from api.models.organization import Organization
 from api.models.user import User
 from api.models.workspace import Workspace
