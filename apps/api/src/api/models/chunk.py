@@ -16,7 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from pgvector.sqlalchemy import Vector
 
 from api.core.database import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from api.core.config import config
+from api.core.config import app_config
 
 
 
@@ -56,7 +56,7 @@ class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     meta: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
 
     # Nullable: chunks are inserted before embeddings are generated.
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(config.EMBEDDING_DIM))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(app_config.EMBEDDING_DIM))
     embedding_model: Mapped[str | None] = mapped_column(String(100))
 
     # Generated column for full-text search, maintained by Postgres.

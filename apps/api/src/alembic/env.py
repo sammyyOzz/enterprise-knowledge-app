@@ -13,7 +13,7 @@ from api.models.user import User
 from api.models.workspace import Workspace
 from api.models.workspace_member import WorkspaceMember
 
-from api.core.config import config as app_config
+from api.core.config import app_config
 
 config = context.config
 

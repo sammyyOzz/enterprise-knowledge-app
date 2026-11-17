@@ -12,14 +12,14 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from api.core.config import config
+from api.core.config import app_config
 
 import uuid
 from datetime import datetime
 
 
 # Synchronous engine: simple, and works the same in FastAPI routes and Celery tasks.
-engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(app_config.DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Config(BaseSettings):
@@ -31,6 +33,25 @@ class Config(BaseSettings):
     # ================================
     EMBEDDING_DIM: int = 1536
 
+
+    # ================================
+    # INGESTION
+    # ================================
+    MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB
+    MAX_FILENAME_LENGTH: int = 200
+    # A PENDING/PROCESSING version whose latest job hasn't moved for this long is
+    # considered stuck (e.g. worker killed) and may be retried.
+    STALE_AFTER: timedelta = timedelta(minutes=15)
+
+    # Extension -> canonical MIME type (browsers report MIME types unreliably).
+    ALLOWED_TYPES: dict[str, str] = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".txt": "text/plain",
+        ".md": "text/markdown",
+        ".csv": "text/csv",
+    }
+
     model_config = SettingsConfigDict(env_file=".env")
 
-config = Config()
+app_config = Config()

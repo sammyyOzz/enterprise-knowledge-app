@@ -1,7 +1,7 @@
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
-from api.core.config import config as app_config
+from api.core.config import app_config
 
 BUCKET = app_config.S3_BUCKET
 
