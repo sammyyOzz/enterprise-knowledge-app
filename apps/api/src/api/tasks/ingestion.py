@@ -1,21 +1,26 @@
 """
 Celery task that processes one document version.
 
-Pipeline:  download -> PARSE (done) -> CHUNK (done) -> embed (TODO, step 7) -> done
-Until embeddings land, a version is marked READY once its chunks are stored, but the chunks
-have no vectors yet, so they are not searchable by meaning.
+Pipeline:  download -> parse -> chunk -> embed -> done
+
+A version only becomes READY after EVERY chunk has its vector, so search never sees a
+half-embedded document. Chunk rows are written before embedding and vectors are saved batch
+by batch (so progress survives and memory stays small). If anything fails, the version is
+FAILED and a retry starts from scratch, replacing all of that version's chunks.
 """
 
 import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 import api.models  # noqa: F401  (registers all models)
 from api.chunking import chunk_document, get_token_counter
 from api.core.config import app_config
 from api.core.database import SessionLocal
+from api.embeddings import EmbeddingError, EmbeddingUnavailable, build_embedding_text
+from api.embeddings.openai_client import get_embedder
 from api.enums.enums import IngestionStage, JobStatus, ProcessingStatus
 from api.models.chunk import Chunk
 from api.models.ingestion_job import IngestionJob
@@ -109,9 +114,11 @@ def process_document_version(job_id: str) -> None:
 
             # Replace this version's chunks in ONE transaction, so a retry or re-delivery
             # can never leave duplicate or half-written chunks behind.
+            chunk_ids = [uuid.uuid4() for _ in chunks]
             db.execute(delete(Chunk).where(Chunk.document_version_id == version.id))
             db.add_all(
                 Chunk(
+                    id=chunk_id,
                     document_version_id=version.id,
                     workspace_id=workspace_id,
                     chunk_index=c.index,
@@ -121,14 +128,36 @@ def process_document_version(job_id: str) -> None:
                     heading_path=c.heading_path,
                     meta=c.metadata,
                 )
-                for c in chunks
+                for chunk_id, c in zip(chunk_ids, chunks)
             )
             job.stage = IngestionStage.EMBEDDING
             db.commit()
 
             # ---- 3. embed ----------------------------------------------------
-            # TODO (step 7): embed each chunk (heading_path + "\n\n" + content), store vectors.
+            embedder = get_embedder()
+            texts = [build_embedding_text(c.heading_path, c.content) for c in chunks]
+            total_tokens = 0
+            for batch in embedder.iter_embeddings(texts):
+                db.execute(
+                    update(Chunk),
+                    [
+                        {
+                            "id": chunk_ids[batch.offset + i],
+                            "embedding": vector,
+                            "embedding_model": embedder.model,
+                        }
+                        for i, vector in enumerate(batch.vectors)
+                    ],
+                )
+                total_tokens += batch.tokens
+                job.updated_at = _now()  # heartbeat: shows the job is alive (see retry's stale check)
+                db.commit()
+            logger.info(
+                "Job %s: embedded %d chunks with %s (%d tokens billed)",
+                job_id, len(chunks), embedder.model, total_tokens,
+            )
 
+            # ---- 4. done -----------------------------------------------------
             job.stage = IngestionStage.DONE
             job.status = JobStatus.SUCCEEDED
             job.finished_at = _now()
@@ -139,6 +168,13 @@ def process_document_version(job_id: str) -> None:
             # Deterministic: retrying the same file will fail the same way. No re-raise.
             logger.warning("Job %s: %s", job_id, exc)
             _fail(db, job_id, user_message=str(exc), detail=str(exc))
+
+        except EmbeddingError as exc:
+            # EmbeddingUnavailable is transient (retry later); other EmbeddingErrors are
+            # configuration/quota problems. Either way the message is user-safe.
+            level = logging.WARNING if isinstance(exc, EmbeddingUnavailable) else logging.ERROR
+            logger.log(level, "Job %s: embedding failed: %s (cause: %r)", job_id, exc, exc.__cause__)
+            _fail(db, job_id, user_message=str(exc), detail=f"{exc} | cause: {exc.__cause__!r}")
 
         except Exception as exc:  # noqa: BLE001  (includes SoftTimeLimitExceeded)
             logger.exception("Job %s failed", job_id)

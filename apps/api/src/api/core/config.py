@@ -32,6 +32,7 @@ class Config(BaseSettings):
     # EMBEDDINGS
     # ================================
     EMBEDDING_DIM: int = 1536
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
 
 
     # ================================
