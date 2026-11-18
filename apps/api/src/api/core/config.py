@@ -52,6 +52,12 @@ class Config(BaseSettings):
         ".csv": "text/csv",
     }
 
+    # ================================
+    # CHUNKING
+    # ================================
+    CHUNK_MAX_TOKENS: int = 600
+    CHUNK_OVERLAP_TOKENS: int = 80
+
     model_config = SettingsConfigDict(env_file=".env")
 
 app_config = Config()

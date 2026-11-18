@@ -23,6 +23,7 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-multipart>=0.0.33",
     "sqlalchemy>=2.1.8",
+    "tiktoken>=0.14.0",
     "uvicorn>=0.40.0",
     "watchdog[watchmedo]>=7.1.0",
 ]

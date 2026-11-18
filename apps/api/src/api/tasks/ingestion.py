@@ -1,9 +1,9 @@
 """
 Celery task that processes one document version.
 
-Pipeline so far:  download  ->  PARSE (done)  ->  chunk  ->  embed  ->  index
-Chunking and embedding are still TODO (steps 6-7), so until then a version is marked
-READY once it has been parsed successfully, without any chunks being stored.
+Pipeline:  download -> PARSE (done) -> CHUNK (done) -> embed (TODO, step 7) -> done
+Until embeddings land, a version is marked READY once its chunks are stored, but the chunks
+have no vectors yet, so they are not searchable by meaning.
 """
 
 import logging
@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from sqlalchemy import delete
 
 import api.models  # noqa: F401  (registers all models)
+from api.chunking import chunk_document, get_token_counter
+from api.core.config import app_config
 from api.core.database import SessionLocal
 from api.enums.enums import IngestionStage, JobStatus, ProcessingStatus
 from api.models.chunk import Chunk
@@ -24,6 +26,7 @@ from api.utils.storage import download_file
 logger = logging.getLogger(__name__)
 
 UNEXPECTED_ERROR_MESSAGE = "Processing failed unexpectedly. Please try again or contact support."
+MAX_CHUNKS_PER_DOCUMENT = 10_000  # cost/time guard for embedding
 
 
 def _now() -> datetime:
@@ -65,6 +68,7 @@ def process_document_version(job_id: str) -> None:
         version = job.document_version
         # Read what we need now, so no database transaction stays open while we work.
         filename = version.document.filename
+        workspace_id = version.document.workspace_id
         storage_key = version.storage_key
 
         job.status = JobStatus.RUNNING
@@ -75,23 +79,55 @@ def process_document_version(job_id: str) -> None:
         db.commit()
 
         try:
+            # ---- 1. parse ----------------------------------------------------
             raw = download_file(storage_key)
             parsed = parse_document(filename, raw)
-            logger.info(
-                "Job %s: parsed %s -> %d sections, %s pages, %d chars",
-                job_id, filename, len(parsed.sections), parsed.page_count, parsed.char_count,
-            )
-
             version.page_count = parsed.page_count
             job.stage = IngestionStage.CHUNKING
             db.commit()
 
-            # ----------------------------------------------------------------
-            # TODO (steps 6-7): chunk `parsed.sections`, embed, and store.
-            # Do the delete + inserts in ONE transaction so a retry or re-delivery
+            # ---- 2. chunk ----------------------------------------------------
+            chunks = chunk_document(
+                parsed,
+                count_tokens=get_token_counter(),
+                max_tokens=app_config.CHUNK_MAX_TOKENS,
+                overlap_tokens=app_config.CHUNK_OVERLAP_TOKENS,
+            )
+            if not chunks:
+                raise ParsingError("Document has no content to index")
+            if len(chunks) > MAX_CHUNKS_PER_DOCUMENT:
+                raise ParsingError(
+                    f"Document is too large to index ({len(chunks):,} chunks; "
+                    f"the limit is {MAX_CHUNKS_PER_DOCUMENT:,})"
+                )
+            logger.info(
+                "Job %s: %s -> %d sections, %d chunks (avg %d tokens, max %d)",
+                job_id, filename, len(parsed.sections), len(chunks),
+                sum(c.token_count for c in chunks) // len(chunks),
+                max(c.token_count for c in chunks),
+            )
+
+            # Replace this version's chunks in ONE transaction, so a retry or re-delivery
             # can never leave duplicate or half-written chunks behind.
-            # ----------------------------------------------------------------
             db.execute(delete(Chunk).where(Chunk.document_version_id == version.id))
+            db.add_all(
+                Chunk(
+                    document_version_id=version.id,
+                    workspace_id=workspace_id,
+                    chunk_index=c.index,
+                    content=c.content,
+                    token_count=c.token_count,
+                    page_number=c.page_number,
+                    heading_path=c.heading_path,
+                    meta=c.metadata,
+                )
+                for c in chunks
+            )
+            job.stage = IngestionStage.EMBEDDING
+            db.commit()
+
+            # ---- 3. embed ----------------------------------------------------
+            # TODO (step 7): embed each chunk (heading_path + "\n\n" + content), store vectors.
 
             job.stage = IngestionStage.DONE
             job.status = JobStatus.SUCCEEDED
@@ -101,7 +137,7 @@ def process_document_version(job_id: str) -> None:
 
         except ParsingError as exc:
             # Deterministic: retrying the same file will fail the same way. No re-raise.
-            logger.warning("Job %s: parsing failed: %s", job_id, exc)
+            logger.warning("Job %s: %s", job_id, exc)
             _fail(db, job_id, user_message=str(exc), detail=str(exc))
 
         except Exception as exc:  # noqa: BLE001  (includes SoftTimeLimitExceeded)
