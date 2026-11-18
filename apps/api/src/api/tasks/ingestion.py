@@ -31,7 +31,6 @@ from api.utils.storage import download_file
 logger = logging.getLogger(__name__)
 
 UNEXPECTED_ERROR_MESSAGE = "Processing failed unexpectedly. Please try again or contact support."
-MAX_CHUNKS_PER_DOCUMENT = 10_000  # cost/time guard for embedding
 
 
 def _now() -> datetime:
@@ -65,21 +64,30 @@ def process_document_version(job_id: str) -> None:
             logger.error("Ingestion job %s not found", job_id)
             return
 
-        # Celery may re-deliver a task if a worker died (acks_late). Don't redo finished work.
-        if job.status == JobStatus.SUCCEEDED:
-            logger.info("Job %s already succeeded, skipping", job_id)
-            return
-
         version = job.document_version
         # Read what we need now, so no database transaction stays open while we work.
         filename = version.document.filename
         workspace_id = version.document.workspace_id
         storage_key = version.storage_key
 
-        job.status = JobStatus.RUNNING
-        job.stage = IngestionStage.PARSING
-        job.started_at = _now()
-        job.error_message = None
+        # Atomically claim the job: only a QUEUED job may start. This stops duplicate or
+        # re-delivered messages from running the same job twice, and stops a job that already
+        # finished (or was failed by the reaper in tasks/maintenance.py) from being resurrected.
+        claimed = db.execute(
+            update(IngestionJob)
+            .where(IngestionJob.id == job.id, IngestionJob.status == JobStatus.QUEUED)
+            .values(
+                status=JobStatus.RUNNING,
+                stage=IngestionStage.PARSING,
+                started_at=_now(),
+                error_message=None,
+            )
+        ).rowcount
+        db.commit()
+        if not claimed:
+            logger.info("Job %s is no longer queued (already started, finished or reaped); skipping", job_id)
+            return
+        db.refresh(job)
         version.status = ProcessingStatus.PROCESSING
         db.commit()
 
@@ -100,10 +108,10 @@ def process_document_version(job_id: str) -> None:
             )
             if not chunks:
                 raise ParsingError("Document has no content to index")
-            if len(chunks) > MAX_CHUNKS_PER_DOCUMENT:
+            if len(chunks) > app_config.MAX_CHUNKS_PER_DOCUMENT:
                 raise ParsingError(
                     f"Document is too large to index ({len(chunks):,} chunks; "
-                    f"the limit is {MAX_CHUNKS_PER_DOCUMENT:,})"
+                    f"the limit is {app_config.MAX_CHUNKS_PER_DOCUMENT:,})"
                 )
             logger.info(
                 "Job %s: %s -> %d sections, %d chunks (avg %d tokens, max %d)",

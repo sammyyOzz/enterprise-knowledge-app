@@ -3,6 +3,7 @@ import time
 from contextlib import asynccontextmanager
 
 from api.routers.documents import router as documents_router
+from api.routers.versions import router as versions_router
 from api.utils.storage import ensure_bucket
 
 import logging
@@ -28,3 +29,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(documents_router)
+app.include_router(versions_router)

@@ -44,6 +44,10 @@ from api.exceptions import (
 )
 
 
+
+MAX_ATTEMPTS = 5
+
+
 # --------------------------------------------------------------------------- #
 # Result types
 # --------------------------------------------------------------------------- #
@@ -131,11 +135,15 @@ def _new_job(db: Session, version: DocumentVersion) -> IngestionJob:
         select(func.max(IngestionJob.attempt)).where(
             IngestionJob.document_version_id == version.id
         )
-    )
+    ) or 0
+
+    if last_attempt >= MAX_ATTEMPTS:
+        raise RetryNotAllowed(f"This version has failed {MAX_ATTEMPTS} times. Upload the file again to start fresh.")
+    
     job = IngestionJob(
         document_version_id=version.id,
         status=JobStatus.QUEUED,
-        attempt=(last_attempt or 0) + 1,
+        attempt=last_attempt + 1,
     )
     db.add(job)
     db.flush()

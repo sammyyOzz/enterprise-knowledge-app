@@ -7,11 +7,18 @@ celery_app = Celery(
     broker=app_config.REDIS_URL,
     backend=app_config.REDIS_URL,
     # Modules containing @celery_app.task functions. The worker imports these on startup.
-    include=["api.tasks.ingestion"],
+    include=["api.tasks.ingestion", "api.tasks.maintenance"],
 )
 
 celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,  # re-deliver if a worker dies mid-task
     worker_prefetch_multiplier=1,  # long tasks: don't hoard jobs
+    beat_schedule={
+        # Run by the `beat` service in docker-compose.
+        "reap-stale-ingestion-jobs": {
+            "task": "maintenance.reap_stale_jobs",
+            "schedule": 300.0,  # every 5 minutes
+        },
+    },
 )

@@ -58,7 +58,8 @@ class Config(BaseSettings):
     # ================================
     CHUNK_MAX_TOKENS: int = 600
     CHUNK_OVERLAP_TOKENS: int = 80
+    MAX_CHUNKS_PER_DOCUMENT: int = 10_000  # cost/time guard for embedding
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 app_config = Config()
