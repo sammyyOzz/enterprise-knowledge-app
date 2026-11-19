@@ -60,6 +60,17 @@ class Config(BaseSettings):
     CHUNK_OVERLAP_TOKENS: int = 80
     MAX_CHUNKS_PER_DOCUMENT: int = 10_000  # cost/time guard for embedding
 
+    # ================================
+    # LLM / RETRIEVAL
+    # ================================
+    LLM_PROVIDER: str = "openai"
+    LLM_MODEL: str = "gpt-4.1"
+    LLM_REASONING_EFFORT: str | None = None
+    LLM_MAX_OUTPUT_TOKENS: int = 2000
+    RETRIEVAL_TOP_K: int = 6
+    RETRIEVAL_MIN_SCORE: float = 0.25
+    CHAT_HISTORY_MESSAGES: int = 6
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 app_config = Config()

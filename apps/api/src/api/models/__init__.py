@@ -14,6 +14,8 @@ from api.models.document import Document
 from api.models.document_version import DocumentVersion
 from api.models.chunk import Chunk
 from api.models.ingestion_job import IngestionJob
+from api.models.conversation import Conversation
+from api.models.message import Message
 
 __all__ = [
   "Organization",
@@ -24,4 +26,6 @@ __all__ = [
   "DocumentVersion",
   "Chunk",
   "IngestionJob",
+  "Conversation",
+  "Message",
 ]

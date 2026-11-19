@@ -12,6 +12,8 @@ from api.models.organization import Organization
 from api.models.user import User
 from api.models.workspace import Workspace
 from api.models.workspace_member import WorkspaceMember
+from api.models.conversation import Conversation
+from api.models.message import Message
 
 from api.core.config import app_config
 
