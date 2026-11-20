@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 import time
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers.documents import router as documents_router
 from api.routers.versions import router as versions_router
@@ -32,3 +33,11 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(documents_router)
 app.include_router(versions_router)
 app.include_router(chat_router)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
