@@ -3,7 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from api.auth.deps import authorize_workspace, current_user, version_workspace_id
 from api.core.database import get_db
+from api.models.user import User
 from api.schemas.status import VersionStatusOut
 from api.services.status import get_version_status
 
@@ -12,8 +14,17 @@ router = APIRouter(prefix="/documents/versions", tags=["versions"])
 
 
 @router.get("/{version_id}", response_model=VersionStatusOut)
-def version_status(version_id: uuid.UUID, db: Session = Depends(get_db)):
+def version_status(
+    version_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     """Live status for one version: state, user-safe error, latest job stage, embedding progress."""
+    workspace_id = version_workspace_id(db, version_id)
+    if workspace_id is None:
+        raise HTTPException(404, "Version not found")
+    authorize_workspace(db, user, workspace_id)
+
     result = get_version_status(db, version_id)
     if result is None:
         raise HTTPException(404, "Version not found")

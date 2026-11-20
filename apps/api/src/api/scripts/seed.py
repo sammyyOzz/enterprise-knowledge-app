@@ -1,25 +1,34 @@
 """
-Create a demo organization, admin user and workspace (idempotent).
+Create (or repair) a demo organization, admin user and workspace. Idempotent.
+The admin password is synchronized with the configured value on every run.
 
-Run inside the api container:
     docker compose exec api python -m api.scripts.seed
+
+The admin's password comes from SEED_ADMIN_PASSWORD (default below). Development only:
+in a real deployment people sign up through the app.
 """
 
+import os
+
+from sqlalchemy import select
+
 import api.models  # noqa: F401  (registers all models)
+from api.auth.passwords import hash_password, verify_password
 from api.core.database import SessionLocal
 from api.enums.enums import UserRole, WorkspaceRole
 from api.models.organization import Organization
 from api.models.user import User
 from api.models.workspace import Workspace
 from api.models.workspace_member import WorkspaceMember
-from sqlalchemy import select
 
 ORG_SLUG = "demo"
 USER_EMAIL = "admin@example.com"
 WORKSPACE_NAME = "Default Workspace"
+DEFAULT_PASSWORD = "password"
 
 
 def main() -> None:
+    password = os.environ.get("SEED_ADMIN_PASSWORD", DEFAULT_PASSWORD)
     with SessionLocal() as db:
         org = db.scalar(select(Organization).where(Organization.slug == ORG_SLUG))
         if org is None:
@@ -32,14 +41,14 @@ def main() -> None:
             user = User(
                 organization_id=org.id,
                 email=USER_EMAIL,
-                # Placeholder, not a valid hash: nobody can log in with it.
-                # Replace when you build authentication.
-                hashed_password="!seed-placeholder",
+                hashed_password=hash_password(password),
                 full_name="Demo Admin",
                 role=UserRole.ADMIN,
             )
             db.add(user)
             db.flush()
+        elif not verify_password(user.hashed_password, password):
+            user.hashed_password = hash_password(password)
 
         workspace = db.scalar(
             select(Workspace).where(
@@ -51,8 +60,7 @@ def main() -> None:
             db.add(workspace)
             db.flush()
 
-        member = db.get(WorkspaceMember, (workspace.id, user.id))
-        if member is None:
+        if db.get(WorkspaceMember, (workspace.id, user.id)) is None:
             db.add(
                 WorkspaceMember(
                     workspace_id=workspace.id, user_id=user.id, role=WorkspaceRole.OWNER
@@ -60,9 +68,8 @@ def main() -> None:
             )
 
         db.commit()
-        print(f"organization_id = {org.id}")
-        print(f"user_id         = {user.id}")
-        print(f"workspace_id    = {workspace.id}   <-- use this for uploads")
+        print(f"Sign in with  {USER_EMAIL}  /  {password}")
+        print(f"workspace_id = {workspace.id}")
 
 
 if __name__ == "__main__":

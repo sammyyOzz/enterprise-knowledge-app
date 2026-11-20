@@ -8,10 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 import api.models  # noqa: F401  (registers all models)
+from api.auth.deps import authorize_workspace, current_user
 from api.core.config import app_config
 from api.core.database import get_db
 from api.models.conversation import Conversation
-from api.models.workspace import Workspace
+from api.models.user import User
 from api.schemas.chat import AskRequest, ConversationDetailOut, ConversationOut
 from api.services.chat import (
     ConversationNotFound,
@@ -30,7 +31,11 @@ def _sse(events: Iterator[dict]) -> Iterator[str]:
 
 
 @router.post("/ask")
-def ask(payload: AskRequest, db: Session = Depends(get_db)):
+def ask(
+    payload: AskRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     """
     Ask a question. Streams server-sent events, each a JSON object on a `data:` line:
       {"type": "meta",  "conversation_id": "..."}                      first
@@ -38,12 +43,11 @@ def ask(payload: AskRequest, db: Session = Depends(get_db)):
       {"type": "done",  "message_id", "answer", "citations", "refused"}  last (replace streamed text with `answer`)
       {"type": "error", "message": "..."}                              instead of done, if it failed
     """
-    if db.get(Workspace, payload.workspace_id) is None:
-        raise HTTPException(404, "Workspace not found")
+    authorize_workspace(db, user, payload.workspace_id)  # any member may ask; also 404s unknown workspaces
 
     try:
         conversation = get_or_create_conversation(
-            db, payload.workspace_id, payload.conversation_id, payload.question
+            db, payload.workspace_id, payload.conversation_id, payload.question, user_id=user.id
         )
     except ConversationNotFound as exc:
         raise HTTPException(404, str(exc))
@@ -75,11 +79,13 @@ def list_conversations(
     workspace_id: uuid.UUID,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    authorize_workspace(db, user, workspace_id)
     return db.scalars(
         select(Conversation)
-        .where(Conversation.workspace_id == workspace_id)
+        .where(Conversation.workspace_id == workspace_id, Conversation.user_id == user.id)  # your own chats only
         .order_by(Conversation.updated_at.desc())
         .limit(limit)
         .offset(offset)
@@ -87,12 +93,17 @@ def list_conversations(
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetailOut)
-def get_conversation(conversation_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_conversation(
+    conversation_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     conversation = db.scalar(
         select(Conversation)
-        .where(Conversation.id == conversation_id)
+        .where(Conversation.id == conversation_id, Conversation.user_id == user.id)
         .options(selectinload(Conversation.messages))
     )
     if conversation is None:
         raise HTTPException(404, "Conversation not found")
+    authorize_workspace(db, user, conversation.workspace_id)  # access ends if you leave the workspace
     return conversation

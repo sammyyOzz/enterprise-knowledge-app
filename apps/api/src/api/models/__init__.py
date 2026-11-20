@@ -16,6 +16,7 @@ from api.models.chunk import Chunk
 from api.models.ingestion_job import IngestionJob
 from api.models.conversation import Conversation
 from api.models.message import Message
+from api.models.auth_session import AuthSession
 
 __all__ = [
   "Organization",
@@ -28,4 +29,5 @@ __all__ = [
   "IngestionJob",
   "Conversation",
   "Message",
+  "AuthSession",
 ]

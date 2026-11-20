@@ -71,6 +71,17 @@ class Config(BaseSettings):
     RETRIEVAL_MIN_SCORE: float = 0.25
     CHAT_HISTORY_MESSAGES: int = 6
 
+    # ================================
+    # AUTH
+    # ================================
+    SESSION_COOKIE_NAME: str = "ekp_session"
+    SESSION_TTL_DAYS: int = 7
+    COOKIE_SECURE: bool = False      # set True behind HTTPS
+    COOKIE_SAMESITE: str = "lax"     # "none" if the client and API are on different sites (needs COOKIE_SECURE=True)
+    COOKIE_DOMAIN: str | None = None
+    CORS_ORIGINS: str = "http://localhost:3000"   # comma-separated
+    ALLOW_SIGNUP: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 app_config = Config()

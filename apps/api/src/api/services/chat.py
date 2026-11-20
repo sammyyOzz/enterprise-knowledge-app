@@ -43,6 +43,7 @@ def get_or_create_conversation(
             select(Conversation).where(
                 Conversation.id == conversation_id,
                 Conversation.workspace_id == workspace_id,  # can't continue another workspace's chat
+                Conversation.user_id == user_id,  # ...or another person's
             )
         )
         if conversation is None:

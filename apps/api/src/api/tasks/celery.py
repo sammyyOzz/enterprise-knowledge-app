@@ -20,5 +20,9 @@ celery_app.conf.update(
             "task": "maintenance.reap_stale_jobs",
             "schedule": 300.0,  # every 5 minutes
         },
+        "purge-expired-sessions": {
+            "task": "maintenance.purge_expired_sessions",
+            "schedule": 3600.0,  # hourly
+        },
     },
 )

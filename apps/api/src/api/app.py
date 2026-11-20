@@ -6,7 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers.documents import router as documents_router
 from api.routers.versions import router as versions_router
 from api.routers.chat import router as chat_router
+from api.auth.csrf import make_origin_guard
+from api.routers.auth import router as auth_router
 from api.utils.storage import ensure_bucket
+from api.core.config import app_config
 
 import logging
 
@@ -29,15 +32,21 @@ async def lifespan(app: FastAPI):
             time.sleep(2)
     yield
 
+
+origins = [o.strip() for o in app_config.CORS_ORIGINS.split(",") if o.strip()]
+
 app = FastAPI(lifespan=lifespan)
+
+app.middleware("http")(make_origin_guard(set(origins)))
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=origins, 
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"]
+)
+
 app.include_router(documents_router)
 app.include_router(versions_router)
 app.include_router(chat_router)
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.include_router(auth_router)

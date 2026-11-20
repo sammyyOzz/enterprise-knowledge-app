@@ -6,8 +6,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 import api.models  # noqa: F401  (registers all models)
-from api.core.config import app_config
+from api.auth.deps import authorize_workspace, current_user, version_workspace_id
 from api.core.database import get_db
+from api.enums.enums import WorkspaceRole
+from api.models.document import Document
+from api.models.user import User
+from api.schemas.document import (
+    DocumentDetailOut,
+    DocumentOut,
+    UploadResponse,
+    VersionOut,
+)
 from api.exceptions import (
     FilenameConflict,
     InvalidFileContent,
@@ -17,20 +26,14 @@ from api.exceptions import (
     StorageUnavailable,
     UnsupportedFileType,
 )
-from api.models.document import Document
-from api.models.workspace import Workspace
-from api.schemas.document import (
-    DocumentDetailOut,
-    DocumentOut,
-    UploadResponse,
-    VersionOut,
-)
 from api.services.ingestion import (
     UploadOutcome,
     UploadResult,
     ingest_upload,
     retry_version,
 )
+
+from api.core.config import app_config
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -66,26 +69,21 @@ def _to_response(result: UploadResult) -> UploadResponse:
 @router.post("/upload", response_model=UploadResponse, status_code=202)
 def upload_document(
     response: Response,
-    # TODO: once auth exists, derive the workspace and user from the session/token
-    # instead of trusting form fields.
     workspace_id: uuid.UUID = Form(...),
     # Optional: upload this file as a NEW VERSION of an existing document, even if the
     # filename is different. If omitted, the filename identifies the document.
     document_id: uuid.UUID | None = Form(None),
     file: UploadFile = File(...),
+    user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    if db.get(Workspace, workspace_id) is None:
-        raise HTTPException(404, "Workspace not found")
+    authorize_workspace(db, user, workspace_id, WorkspaceRole.EDITOR)  # also 404s for unknown workspaces
 
     data = file.file.read(app_config.MAX_UPLOAD_BYTES + 1)
     if not data:
         raise HTTPException(400, "Uploaded file is empty")
     if len(data) > app_config.MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            413,
-            f"File exceeds {app_config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
-        )
+        raise HTTPException(413, f"File exceeds {app_config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
 
     try:
         result = ingest_upload(
@@ -94,6 +92,7 @@ def upload_document(
             document_id=document_id,
             filename=file.filename,
             data=data,
+            uploaded_by=user.id,
         )
     except UnsupportedFileType as exc:
         raise HTTPException(415, str(exc))
@@ -102,6 +101,8 @@ def upload_document(
     except NotFound as exc:
         raise HTTPException(404, str(exc))
     except FilenameConflict as exc:
+        raise HTTPException(409, str(exc))
+    except RetryNotAllowed as exc:
         raise HTTPException(409, str(exc))
     except IntegrityError:
         # Two simultaneous first uploads of the same new filename raced on the unique constraint.
@@ -115,7 +116,16 @@ def upload_document(
 
 
 @router.post("/versions/{version_id}/retry", response_model=UploadResponse, status_code=202)
-def retry_version_processing(version_id: uuid.UUID, db: Session = Depends(get_db)):
+def retry_version_processing(
+    version_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    workspace_id = version_workspace_id(db, version_id)
+    if workspace_id is None:
+        raise HTTPException(404, "Version not found")
+    authorize_workspace(db, user, workspace_id, WorkspaceRole.EDITOR)
+
     try:
         result = retry_version(db, version_id)
     except NotFound as exc:
@@ -132,8 +142,10 @@ def list_documents(
     workspace_id: uuid.UUID,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    authorize_workspace(db, user, workspace_id)
     docs = db.scalars(
         select(Document)
         .where(Document.workspace_id == workspace_id)
@@ -146,7 +158,11 @@ def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentDetailOut)
-def get_document(document_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_document(
+    document_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     doc = db.scalar(
         select(Document)
         .where(Document.id == document_id)
@@ -154,6 +170,7 @@ def get_document(document_id: uuid.UUID, db: Session = Depends(get_db)):
     )
     if doc is None:
         raise HTTPException(404, "Document not found")
+    authorize_workspace(db, user, doc.workspace_id)
 
     base = _to_out(doc)
     return DocumentDetailOut(

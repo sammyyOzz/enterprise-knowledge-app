@@ -1,22 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { WorkspaceGate } from "@/components/WorkspaceGate";
-import { shortId } from "@/lib/format";
-import { useWorkspace } from "@/lib/workspace";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 
 const LINKS = [
   { href: "/ask", label: "Ask" },
   { href: "/knowledge", label: "Knowledge base" },
 ];
+const PUBLIC_PATHS = ["/login", "/signup"];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { workspaceId, ready, setWorkspaceId } = useWorkspace();
+  const router = useRouter();
+  const { status, me, workspaceId, setWorkspaceId, signOut } = useAuth();
+  const isPublic = PUBLIC_PATHS.includes(pathname);
 
-  if (!ready) return null; // first client render: we don't know the saved workspace yet
-  if (!workspaceId) return <WorkspaceGate />;
+  useEffect(() => {
+    if (status === "anonymous" && !isPublic) router.replace("/login");
+    if (status === "authenticated" && isPublic) router.replace("/ask");
+  }, [status, isPublic, router]);
+
+  if (status === "loading") return null;
+  if (isPublic) return status === "anonymous" ? <>{children}</> : null;
+  if (status === "anonymous" || !me) return null; // redirecting to /login
+
+  if (!workspaceId) {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-6">
+        <h1 className="font-serif text-[28px] leading-tight">No workspace yet</h1>
+        <p className="mt-3 text-muted">
+          You&apos;re signed in as {me.user.email}, but you don&apos;t belong to a workspace. Ask an administrator to add
+          you to one.
+        </p>
+        <button onClick={() => void signOut()} className="mt-6 self-start underline underline-offset-2">
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  const multiple = me.workspaces.length > 1;
 
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
@@ -44,10 +69,34 @@ export function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="text-sm text-muted md:mt-auto md:px-5">
-          <p className="hidden md:block">Workspace {shortId(workspaceId)}</p>
-          <button onClick={() => setWorkspaceId(null)} className="underline underline-offset-2 hover:text-ink">
-            Change workspace
+        <div className="flex items-center gap-3 text-sm md:mt-auto md:flex-col md:items-stretch md:gap-1 md:px-5">
+          {multiple && (
+            <div className="hidden md:block">
+              <label htmlFor="workspace" className="text-muted">
+                Workspace
+              </label>
+              <select
+                id="workspace"
+                value={workspaceId}
+                onChange={(e) => setWorkspaceId(e.target.value)}
+                className="mt-1 block w-full rounded-md border border-rule bg-paper px-2 py-1"
+              >
+                {me.workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <p className="hidden truncate text-muted md:block" title={me.user.email}>
+            {me.user.full_name ?? me.user.email}
+          </p>
+          <button
+            onClick={() => void signOut()}
+            className="text-left text-muted underline underline-offset-2 hover:text-ink"
+          >
+            Sign out
           </button>
         </div>
       </header>

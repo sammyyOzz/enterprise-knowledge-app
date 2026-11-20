@@ -10,11 +10,12 @@ an honest status and the user can retry.
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 
 import api.models  # noqa: F401  (registers all models)
 from api.core.database import SessionLocal
 from api.enums.enums import JobStatus, ProcessingStatus
+from api.models.auth_session import AuthSession
 from api.models.ingestion_job import IngestionJob
 from api.tasks.celery import celery_app
 
@@ -82,3 +83,13 @@ def reap_stale_jobs() -> dict:
         db.commit()
 
     return {"reaped": reaped}
+
+
+@celery_app.task(name="maintenance.purge_expired_sessions")
+def purge_expired_sessions() -> dict:
+    """Delete login sessions that expired more than a day ago."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    with SessionLocal() as db:
+        result = db.execute(delete(AuthSession).where(AuthSession.expires_at < cutoff))
+        db.commit()
+    return {"purged": result.rowcount}

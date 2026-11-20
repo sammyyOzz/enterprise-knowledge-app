@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Sans, Newsreader } from "next/font/google";
 import { Shell } from "@/components/Shell";
-import { WorkspaceProvider } from "@/lib/workspace";
+import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
 // Two clearly different families: a text serif for anything you read (answers, headings),
@@ -18,9 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${ui.variable} ${read.variable}`}>
       <body>
-        <WorkspaceProvider>
+        <AuthProvider>
           <Shell>{children}</Shell>
-        </WorkspaceProvider>
+        </AuthProvider>
       </body>
     </html>
   );
